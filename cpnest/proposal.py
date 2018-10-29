@@ -323,41 +323,39 @@ class HamiltonianProposal(EnsembleEigenVector):
         V_vals = np.atleast_1d([p.logL for p in self.ensemble])
         
         self.normal = []
+        self.dimwidths = []
         for i,x in enumerate(tracers_array.T):
-            # sort the values
-            idx = x.argsort()
-            xs = x[idx]
-            Vs = V_vals[idx]
             # remove potential duplicate entries
-            xs, ids = np.unique(xs, return_index = True)
-            Vs = Vs[ids]
+            xs, ids = np.unique(x, return_index = True)
+            Vs = V_vals[ids]
             # pick only finite values
             idx = np.isfinite(Vs)
             Vs  = Vs[idx]
             xs  = xs[idx]
             # filter to within the 90% range of the Pvals
-            Vl,Vh = np.percentile(Vs,[5,95])
-            (idx,) = np.where(np.logical_and(Vs > Vl,Vs < Vh))
-            Vs = Vs[idx]
-            xs = xs[idx]
+#            Vl,Vh = np.percentile(Vs,[5,95])
+#            (idx,) = np.where(np.logical_and(Vs > Vl,Vs < Vh))
+#            Vs = Vs[idx]
+#            xs = xs[idx]
             # Pick knots for this parameters: Choose 5 knots between
             # the 1st and 99th percentiles (heuristic tuning WDP)
             knots = np.percentile(xs,np.linspace(1,99,5))
             # Guesstimate the length scale for numerical derivatives
             dimwidth = knots[-1]-knots[0]
-            delta = 0.1 * dimwidth / len(idx)
+            self.dimwidths.append(dimwidth)
+            delta = dimwidth / len(idx)
             # Apply a Savtzky-Golay filter to the likelihoods (low-pass filter)
             window_length = len(idx)//2+1 # Window for Savtzky-Golay filter
             if window_length%2 == 0: window_length += 1
             f = savgol_filter(Vs, window_length,
-                              5, # Order of polynominal filter
+                              3, # Order of polynominal filter
                               deriv=1, # Take first derivative
                               delta=delta, # delta for numerical deriv
                               mode='mirror' # Reflective boundary conds.
                               )
             # construct a LSQ spline interpolant
             self.normal.append(LSQUnivariateSpline(xs, f, knots, ext = 3, k = 3))
-#            np.savetxt('dlogL_spline_%d.txt'%i,np.column_stack((xs,Vs,self.normal[-1](xs),f)))
+            np.savetxt('dlogL_spline_%d.txt'%i,np.column_stack((xs,Vs,self.normal[-1](xs),f)))
 
     def unit_normal(self, q):
         """
@@ -455,8 +453,8 @@ class LeapFrog(HamiltonianProposal):
         # generate a canonical momentum
         p0 = np.atleast_1d(self.momenta_distribution.rvs())
         # evolve along the trajectory
-        q, p = self.evolve_trajectory(p0, q0, *args)
         q0.logP = -self.V(q0)
+        q, p = self.evolve_trajectory(p0, q0, *args)
         # minus sign from the definition of the potential
         initial_energy = self.T(p0) - q0.logP
         q.logP = -self.V(q)
@@ -566,13 +564,15 @@ class ConstrainedLeapFrog(LeapFrog):
         """
         invM = np.atleast_1d(np.squeeze(np.diag(self.inverse_mass_matrix)))
         # generate the trajectory lengths from a scale invariant distribution
-        self.L  = int(np.exp(np.random.uniform(np.log(10),np.log(50))))
+        minL = 1
+        maxL = 100
+        self.L  = np.random.randint(minL,maxL)
         """
-        Step size: 3e-2, manual tuning
+        Step size: dimsize/maxL, manual tuning
         dimension^-(1/4) based on
         http://www.homepages.ucl.ac.uk/~ucakabe/papers/Bernoulli_11b.pdf
         """
-        self.dt = 3e-3*float(len(invM))**(-0.25)
+        self.dt = np.array([(d/maxL)*float(len(invM))**(-0.25) for d in self.dimwidths])
 #        f = open("trajectory.txt","w")
 #        for j,k in enumerate(q0.names):
 #            f.write("%s\t"%k)
@@ -594,17 +594,18 @@ class ConstrainedLeapFrog(LeapFrog):
             # do a full step in position
             for j,k in enumerate(q.names):
                 u,l = self.prior_bounds[j][1], self.prior_bounds[j][0]
-                q[k] += self.dt * p[j] * invM[j]
+                q[k] += self.dt[j] * p[j] * invM[j]
                 # check and reflect against the bounds
                 # of the allowed parameter range
-                if q[k] > u:
-                    q[k] = u - (q[k] - u)
-                    p[j] *= -1
-                if q[k] < l:
-                    q[k] = l + (l - q[k])
-                    p[j] *= -1
+                while q[k] > u or q[k] < l:
+                    if q[k] > u:
+                        q[k] = u - (q[k] - u)
+                        p[j] *= -1
+                    if q[k] < l:
+                        q[k] = l + (l - q[k])
+                        p[j] *= -1
+
             dV = self.gradient(q)
-            
             logL = self.log_likelihood(q)
             q.logL = logL
             # if the trajectory led us outside the likelihood bound,

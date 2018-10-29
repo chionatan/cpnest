@@ -121,10 +121,12 @@ class Sampler(object):
         for k in range(self.poolsize):
             if self.verbose > 1: sys.stderr.write("process {0!s} --> distributing pool of {1:d} points from the prior --> {2:.0f} % complete\r".format(os.getpid(), self.poolsize, 100.0*float(k+1)/float(self.poolsize)))
             _, _, p = next(self.yield_sample(-np.inf))
-        
+
         if self.verbose > 1: sys.stderr.write("\n")
         if self.verbose > 2: sys.stderr.write("Initial estimated ACL = {0:d}\n".format(self.Nmcmc))
         self.proposal.set_ensemble(self.evolution_points)
+        # finally empty the deque
+        self.evolution_points = deque(maxlen=self.poolsize)
         self.initialised=True
 
     def estimate_nmcmc(self, safety=5, tau=None):
@@ -164,7 +166,7 @@ class Sampler(object):
         if not self.initialised:
             self.reset()
 
-        self.counter=1
+        self.counter = 1
         __checkpoint_flag=False
         while True:
             if self.manager.checkpoint_flag.value:
@@ -245,8 +247,8 @@ class MetropolisHastingsSampler(Sampler):
     for :obj:`cpnest.proposal.EnembleProposal`
     """
     def yield_sample(self, logLmin):
+        sub_counter = 0
         while True:
-            sub_counter = 0
             sub_accepted = 0
             oldparam = self.evolution_points.popleft()
             logp_old = self.user.log_prior(oldparam)
@@ -282,12 +284,12 @@ class HamiltonianMonteCarloSampler(Sampler):
     for :obj:`cpnest.proposal.HamiltonianProposal`
     """
     def yield_sample(self, logLmin):
+        sub_counter = 0
         while True:
             sub_accepted = 0
-            sub_counter = 0
             while not sub_accepted:
                 oldparam = self.evolution_points.popleft()
-                newparam = self.proposal.get_sample(oldparam.copy(),logLmin=logLmin)
+                newparam = self.proposal.get_sample(oldparam.copy(),logLmin=np.minimum(logLmin,oldparam.logL))
                 sub_counter += 1
                 if self.proposal.log_J > np.log(random()):
                     sub_accepted += 1

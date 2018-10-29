@@ -272,7 +272,7 @@ class NestedSampler(object):
                 while i<self.Nlive:
                     self.acceptance,self.jumps,self.params[i] = self.manager.consumer_pipes[self.queue_counter].recv()
                     self.queue_counter = (self.queue_counter + 1) % len(self.manager.consumer_pipes)
-                    if self.params[i].logP!=-np.inf and self.params[i].logL!=-np.inf:
+                    if np.isfinite(self.params[i].logP) and np.isfinite(self.params[i].logL):
                         i+=1
                         break
             if self.verbose:
