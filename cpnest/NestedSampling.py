@@ -221,9 +221,10 @@ class NestedSampler(object):
         logLtmp = []
         for k in self.worst:
             self.state.increment(self.params[k].logL)
-            self.manager.consumer_pipes[k].send(self.params[k])
             self.nested_samples.append(self.params[k])
             logLtmp.append(self.params[k].logL)
+            self.manager.consumer_pipes[k].send(self.params[k])
+        
         self.condition = logaddexp(self.state.logZ,self.logLmax - self.iteration/(float(self.Nlive))) - self.state.logZ
         
         # Replace the points we just consumed with the next acceptable ones

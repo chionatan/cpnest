@@ -332,11 +332,6 @@ class HamiltonianProposal(EnsembleEigenVector):
             idx = np.isfinite(Vs)
             Vs  = Vs[idx]
             xs  = xs[idx]
-            # filter to within the 90% range of the Pvals
-#            Vl,Vh = np.percentile(Vs,[5,95])
-#            (idx,) = np.where(np.logical_and(Vs > Vl,Vs < Vh))
-#            Vs = Vs[idx]
-#            xs = xs[idx]
             # Pick knots for this parameters: Choose 5 knots between
             # the 1st and 99th percentiles (heuristic tuning WDP)
             knots = np.percentile(xs,np.linspace(1,99,5))
@@ -563,8 +558,8 @@ class ConstrainedLeapFrog(LeapFrog):
             position
         """
         invM = np.atleast_1d(np.squeeze(np.diag(self.inverse_mass_matrix)))
-        # generate the trajectory lengths from a scale invariant distribution
-        minL = 1
+        # generate the trajectory lengths from a uniform distribution
+        minL = 10
         maxL = 100
         self.L  = np.random.randint(minL,maxL)
         """
@@ -585,7 +580,8 @@ class ConstrainedLeapFrog(LeapFrog):
 #        f.write("%e\n"%q0.logL)
         # First half-step in momentum
         p = p0 - 0.5 * self.dt * self.gradient(q0)
-        q = q0
+        q = q0.copy()
+        logL0 = q0.logL
 #        for j,k in enumerate(q.names):
 #            f.write("%e\t"%q[k])
 #        f.write("%e\t"%logLmin)
@@ -612,7 +608,7 @@ class ConstrainedLeapFrog(LeapFrog):
             # reflect the momentum orthogonally to the surface
             if np.isfinite(logLmin):
                 
-                if (logL - logLmin) <= 0:
+                if (logL < logLmin):
                     normal = self.unit_normal(q)
                     p = p - 2.0*np.dot(p,normal)*normal
                 else:
@@ -624,7 +620,13 @@ class ConstrainedLeapFrog(LeapFrog):
 #                f.write("%e\t"%q[k])
 #            f.write("%e\t"%logLmin)
 #            f.write("%e\n"%q.logL)
+#            print("L:{0} q:{1}".format(i,q))
+
         # Do a final update of the momentum for a half step
         p += - 0.5 * self.dt * dV
 #        f.close()
+#        if q.logL < logLmin:
+#            print("{0}".format(q0))
+#            print("{0}".format(q))
+#            exit()
         return q, -p

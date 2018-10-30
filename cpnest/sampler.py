@@ -125,8 +125,6 @@ class Sampler(object):
         if self.verbose > 1: sys.stderr.write("\n")
         if self.verbose > 2: sys.stderr.write("Initial estimated ACL = {0:d}\n".format(self.Nmcmc))
         self.proposal.set_ensemble(self.evolution_points)
-        # finally empty the deque
-        self.evolution_points = deque(maxlen=self.poolsize)
         self.initialised=True
 
     def estimate_nmcmc(self, safety=5, tau=None):
@@ -177,7 +175,7 @@ class Sampler(object):
                 break
             
             p = self.producer_pipe.recv()
-
+#            print("received: logL = {0}".format(p.logL))
             if p is None:
                 break
             
@@ -260,7 +258,7 @@ class MetropolisHastingsSampler(Sampler):
                 if newparam.logP-logp_old + self.proposal.log_J > log(random()):
                     newparam.logL = self.user.log_likelihood(newparam)
                     if newparam.logL > logLmin:
-                        oldparam = newparam
+                        oldparam = newparam.copy()
                         logp_old = newparam.logP
                         sub_accepted+=1
                 if (sub_counter >= self.Nmcmc and sub_accepted > 0 ) or sub_counter >= self.maxmcmc:
@@ -287,13 +285,16 @@ class HamiltonianMonteCarloSampler(Sampler):
         sub_counter = 0
         while True:
             sub_accepted = 0
-            while not sub_accepted:
+            while not sub_accepted and sub_counter < self.maxmcmc:
                 oldparam = self.evolution_points.popleft()
+#                print("in cycle: logL = {0}".format(oldparam.logL))
                 newparam = self.proposal.get_sample(oldparam.copy(),logLmin=np.minimum(logLmin,oldparam.logL))
+#                print("in cycle: updated logL = {0}".format(newparam.logL))
                 sub_counter += 1
                 if self.proposal.log_J > np.log(random()):
+#                    print("accepted: logL = {0}, a = {1}".format(newparam.logL,self.proposal.log_J))
                     sub_accepted += 1
-                    oldparam = newparam
+                    oldparam = newparam.copy()
                 self.evolution_points.append(oldparam)
 
             self.sub_acceptance = float(sub_accepted)/float(sub_counter)
